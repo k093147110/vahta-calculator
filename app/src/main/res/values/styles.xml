@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.VahtaCalculator" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#121212</item>
+        <item name="android:navigationBarColor">#181D21</item>
+        <item name="android:windowBackground">#121212</item>
+        <item name="android:colorAccent">#FF6B00</item>
+    </style>
+</resources>
