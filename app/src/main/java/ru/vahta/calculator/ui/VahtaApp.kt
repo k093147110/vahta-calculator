@@ -97,6 +97,7 @@ private enum class PurchaseProduct {
 private data class VacancyDraft(
     val dailyRate: String = "3500",
     val durationDays: String = "30",
+    val workSchedule: String = "6/1",
     val shiftHours: String = "11",
     val travel: String = "5000",
     val foodPerDay: String = "400",
@@ -139,6 +140,7 @@ fun VahtaApp() {
             VacancyDraft(
                 dailyRate = "4000",
                 durationDays = "30",
+                workSchedule = "5/2",
                 shiftHours = "12",
                 travel = "3000",
                 foodPerDay = "300",
@@ -167,8 +169,9 @@ fun VahtaApp() {
         try {
             comparisonResults = calculateDraft(vacancy1) to calculateDraft(vacancy2)
             screen = SCREEN_COMPARE
-        } catch (_: Exception) {
-            dialogMessage = "Проверьте числа в обеих вакансиях перед сравнением."
+        } catch (e: Exception) {
+            dialogMessage = e.message?.takeIf { it.isNotBlank() }
+                ?: "Проверьте числа в обеих вакансиях перед сравнением."
         }
     }
 
@@ -290,8 +293,8 @@ fun VahtaApp() {
                         )
                         screen = SCREEN_RESULT
                         null
-                    } catch (_: Exception) {
-                        "Проверьте числа в заполненных полях."
+                    } catch (e: Exception) {
+                        e.message?.takeIf { it.isNotBlank() } ?: "Проверьте числа в заполненных полях."
                     }
                 },
             )
@@ -350,7 +353,11 @@ private fun CalculatorScreen(
                 onDraftChange(draft.copy(durationDays = it))
             }
             CardDivider()
-            InputRow("График, ч/день", draft.shiftHours) {
+            ScheduleInputRow("График работы", draft.workSchedule) {
+                onDraftChange(draft.copy(workSchedule = it))
+            }
+            CardDivider()
+            InputRow("Часов в день", draft.shiftHours) {
                 onDraftChange(draft.copy(shiftHours = it))
             }
         }
@@ -460,9 +467,14 @@ private fun ResultScreen(
         SectionTitle("Доходы")
         GroupCard {
             SummaryRow(
-                label = "Заработок (${formatRubles(draft.dailyRate.toMoneyDouble())} × $duration дн.)",
+                label = "Заработок (${formatRubles(draft.dailyRate.toMoneyDouble())} × ${result.workShifts} смен)",
                 value = formatRubles(result.grossMax),
                 money = true,
+            )
+            CardDivider()
+            SummaryRow(
+                label = "График / часов в день",
+                value = "${draft.workSchedule} / ${draft.shiftHours} ч",
             )
         }
 
@@ -566,11 +578,15 @@ private fun ComparisonScreen(
             )
             CardDivider()
             ComparisonTableRow(
-                label = "График, ч/день",
+                label = "График работы",
+                left = vacancy1Draft.workSchedule,
+                right = vacancy2Draft.workSchedule,
+            )
+            CardDivider()
+            ComparisonTableRow(
+                label = "Часов в день",
                 left = vacancy1Draft.shiftHours,
                 right = vacancy2Draft.shiftHours,
-                highlightLeft = vacancy1Draft.shiftHours.toMoneyDouble() < vacancy2Draft.shiftHours.toMoneyDouble(),
-                highlightRight = vacancy2Draft.shiftHours.toMoneyDouble() < vacancy1Draft.shiftHours.toMoneyDouble(),
             )
             CardDivider()
             ComparisonTableRow(
@@ -766,6 +782,52 @@ private fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
             content = content,
+        )
+    }
+}
+
+@Composable
+private fun ScheduleInputRow(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            fontSize = 14.sp,
+        )
+        BasicTextField(
+            value = value,
+            onValueChange = { next ->
+                if (next.length <= 16 && !next.contains('\n')) onValueChange(next)
+            },
+            modifier = Modifier.width(108.dp),
+            textStyle = TextStyle(
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 18.sp,
+                textAlign = TextAlign.End,
+            ),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+            singleLine = true,
+            cursorBrush = SolidColor(AppOrange),
+            decorationBox = { innerTextField ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(InputSurface, RoundedCornerShape(8.dp))
+                        .border(1.dp, AppBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    innerTextField()
+                }
+            },
         )
     }
 }
@@ -1213,7 +1275,7 @@ private fun calculateDraft(draft: VacancyDraft): VahtaResult {
         taxStatus = TaxStatus.UNKNOWN,
         durationValue = draft.durationDays.toInt(),
         durationUnit = DurationUnit.CALENDAR_DAYS,
-        schedule = WorkSchedule(7, 0),
+        schedule = draft.workSchedule.toWorkSchedule(),
         shiftHours = draft.shiftHours.toRequiredDouble(),
         interWatchRestDays = 0,
         travelCost = draft.travel.toMoneyDouble(),
@@ -1241,5 +1303,12 @@ private fun formatNumber(value: Double): String =
     NumberFormat.getNumberInstance(Locale("ru", "RU")).format(value)
 
 private fun String.toRequiredDouble(): Double = replace(',', '.').toDouble()
+
+private fun String.toWorkSchedule(): WorkSchedule {
+    val parts = Regex("\\d+").findAll(trim()).map { it.value.toInt() }.toList()
+    require(parts.size == 2) { "Укажите график работы в формате 6/1, 5/2 или 7/7." }
+    require(parts[0] > 0 && parts[1] >= 0) { "В графике число рабочих дней должно быть больше нуля." }
+    return WorkSchedule(workDays = parts[0], restDays = parts[1])
+}
 
 private fun String.toMoneyDouble(): Double = replace(',', '.').toDoubleOrNull() ?: 0.0
